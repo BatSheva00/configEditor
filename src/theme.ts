@@ -14,4 +14,8 @@ export const appTheme = createTheme({
     button: { textTransform: 'none', fontWeight: 600 },
   },
   shape: { borderRadius: 10 },
+  components: {
+    MuiButton: { defaultProps: { disableElevation: true } },
+    MuiTextField: { defaultProps: { fullWidth: true, size: 'small' } },
+  },
 })
