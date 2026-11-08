@@ -8,9 +8,9 @@ import { releaseConfigSchema } from '../model/schema.ts'
 // Nested catchall fields make zodResolver's inferred type too deep for TypeScript.
 const resolveConfiguration = zodResolver(releaseConfigSchema) as Resolver<ReleaseConfigFormValues>
 
-export const useConfigurationForm = () =>
+export const useConfigurationForm = (initialValues?: ReleaseConfigFormValues) =>
   useForm<ReleaseConfigFormValues>({
-    defaultValues: createDefaultReleaseConfig(),
+    defaultValues: initialValues ?? createDefaultReleaseConfig(),
     resolver: resolveConfiguration,
     // Keep entered values when the visible step changes.
     shouldUnregister: false,

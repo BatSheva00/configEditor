@@ -1,13 +1,12 @@
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
-import { serializeConfiguration, type ReleaseConfigFormValues } from '../model/document.ts'
 
 type ConfigurationPreviewProps = {
-  values: ReleaseConfigFormValues
+  text: string
   onHide: () => void
 }
 
-export function ConfigurationPreview({ values, onHide }: ConfigurationPreviewProps) {
+export function ConfigurationPreview({ text, onHide }: ConfigurationPreviewProps) {
   return (
     <Box
       role="region"
@@ -42,7 +41,7 @@ export function ConfigurationPreview({ values, onHide }: ConfigurationPreviewPro
           lineHeight: 1.55,
         }}
       >
-        {serializeConfiguration(values)}
+        {text}
       </Box>
     </Box>
   )
