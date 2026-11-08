@@ -73,6 +73,7 @@ export const toFormValues = (document: ReleaseConfigDraft): ReleaseConfigFormVal
 export const applyKnownFields = (
   document: ReleaseConfigDraft,
   values: ReleaseConfigFormValues,
+  edit: { removeVdd?: boolean } = {},
 ): ReleaseConfigDraft => {
   const next = structuredClone(document)
 
@@ -88,6 +89,10 @@ export const applyKnownFields = (
       ...values.vdd,
       recentFixes: [...values.vdd.recentFixes],
     }
+  }
+
+  if (edit.removeVdd) {
+    delete next.vdd
   }
 
   return next

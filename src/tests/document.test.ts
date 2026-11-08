@@ -147,6 +147,30 @@ describe('configuration documents', () => {
     expect(document.vdd?.recentFixes).toEqual(['Fixed login issue'])
   })
 
+  it('deletes the VDD block, including unknown fields, only when removal is explicit', () => {
+    const values = toFormValues(document)
+    if (values.vdd) {
+      values.vdd.versionNumber = '9.0'
+    }
+    const updated = applyKnownFields(document, values, { removeVdd: true })
+
+    expect(updated.vdd).toBeUndefined()
+    expect(updated.schemaVersion).toBe(4)
+    expect(updated.configurationManager.password).toBe('password123')
+    expect(document.vdd?.owner).toBe('release-team')
+    expect(document.vdd?.versionNumber).toBe('2.0.0')
+  })
+
+  it('leaves a document without a VDD block unchanged when removal is requested', () => {
+    const withoutVdd: ReleaseConfigDraft = { ...document }
+    delete withoutVdd.vdd
+    const updated = applyKnownFields(withoutVdd, toFormValues(withoutVdd), { removeVdd: true })
+
+    expect(updated.vdd).toBeUndefined()
+    expect(Object.hasOwn(updated, 'vdd')).toBe(false)
+    expect(updated.schemaVersion).toBe(4)
+  })
+
   it('keeps the original VDD block when the form values omit it', () => {
     const values = toFormValues(document)
     delete values.vdd
