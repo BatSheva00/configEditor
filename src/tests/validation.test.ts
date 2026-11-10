@@ -198,19 +198,14 @@ describe('structural validation', () => {
     expect(document.vdd?.releaseDate).toBe('2024-02-31')
   })
 
-  it('preserves surrounding spaces and does not mutate the input', () => {
+  it('keeps surrounding spaces and does not mutate the input', () => {
     const document = expectStructural(padded)
 
-    expect(document.configurationManager.url).toBe('  http://config-manager.example.com  ')
-    expect(document.configurationManager.username).toBe('  admin  ')
-    expect(document.configurationManager.password).toBe('  password123  ')
-    expect(document.branchSelection.defaultBranch).toBe('  main  ')
-    expect(document.build.versionNumber).toBe('  1.0.0  ')
-    expect(document.build.command).toBe('  npm run build  ')
-    expect(document.build.outputDirectory).toBe('  build/  ')
-    expect(document.copyToTarget.targetDirectory).toBe('  /var/www/html/  ')
-    expect(document.vdd?.versionNumber).toBe('  1.0.0  ')
-    expect(document.vdd?.releaseDate).toBe('  2024-08-09  ')
+    expect(document.configurationManager).toEqual(padded.configurationManager)
+    expect(document.branchSelection).toEqual(padded.branchSelection)
+    expect(document.build).toEqual(padded.build)
+    expect(document.copyToTarget).toEqual(padded.copyToTarget)
+    expect(document.vdd).toEqual(padded.vdd)
     expect(padded.configurationManager.url).toBe('  http://config-manager.example.com  ')
   })
 
@@ -276,11 +271,18 @@ describe('defaults', () => {
     expect(document.vdd?.recentFixes).toEqual([])
   })
 
-  it('rejects the default draft for export and still allows an empty password', () => {
+  it('rejects the default draft for export, including an empty password', () => {
     const issues = expectExportRejection(createDefaultReleaseConfig())
+    const paths = issues.map((issue) => issue.path)
 
-    expect(issues.map((issue) => issue.path)).toContain('configurationManager.url')
-    expect(issues.map((issue) => issue.path)).not.toContain('configurationManager.password')
+    expect(paths).toEqual(
+      expect.arrayContaining([
+        'configurationManager.url',
+        'configurationManager.username',
+        'configurationManager.password',
+        'copyToTarget.targetDirectory',
+      ]),
+    )
   })
 })
 
@@ -305,7 +307,7 @@ describe('export validation', () => {
     )
   })
 
-  it('rejects empty text for export and allows an empty password', () => {
+  it('rejects empty text for export, including an empty password', () => {
     const incomplete = {
       configurationManager: { url: '', username: '   ', password: '' },
       branchSelection: { defaultBranch: '   ' },
@@ -324,6 +326,7 @@ describe('export validation', () => {
       expect.arrayContaining([
         'configurationManager.url',
         'configurationManager.username',
+        'configurationManager.password',
         'branchSelection.defaultBranch',
         'build.versionNumber',
         'build.command',
@@ -331,47 +334,79 @@ describe('export validation', () => {
         'copyToTarget.targetDirectory',
         'vdd.versionNumber',
         'vdd.releaseDate',
-        'vdd.recentFixes.0',
-        'vdd.recentFixes.1',
       ]),
     )
-    expect(issues.map((issue) => issue.path)).not.toContain('configurationManager.password')
+    expect(issues.some((issue) => issue.path.startsWith('vdd.recentFixes'))).toBe(false)
   })
 
-  it('rejects an invalid, blank, or non-http URL and accepts https', () => {
-    expectExportPath(
-      {
-        ...exampleDocument,
-        configurationManager: { ...exampleDocument.configurationManager, url: 'not-a-url' },
-      },
-      'configurationManager.url',
-    )
-    expectExportPath(
+  it('requires a URL and keeps the text that was entered', () => {
+    const issues = expectExportPath(
       {
         ...exampleDocument,
         configurationManager: { ...exampleDocument.configurationManager, url: '   ' },
       },
       'configurationManager.url',
     )
-    expectExportPath(
+    expect(issues.find((issue) => issue.path === 'configurationManager.url')?.message).toBe('URL is required.')
+
+    expect(expectExportPath(
       {
         ...exampleDocument,
-        configurationManager: {
-          ...exampleDocument.configurationManager,
-          url: 'ftp://files.example.com/build',
-        },
+        configurationManager: { ...exampleDocument.configurationManager, url: 'not-a-url' },
       },
       'configurationManager.url',
-    )
+    ).find((issue) => issue.path === 'configurationManager.url')?.message).toBe('URL is not valid.')
 
     const document = expectExport({
       ...exampleDocument,
-      configurationManager: {
-        ...exampleDocument.configurationManager,
-        url: 'https://config-manager.example.com',
-      },
+      configurationManager: { ...exampleDocument.configurationManager, url: 'https://config-manager.example.com' },
     })
     expect(document.configurationManager.url).toBe('https://config-manager.example.com')
+  })
+
+  it('requires a directory and rejects a forbidden character', () => {
+    const outputMessage = (outputDirectory: string) =>
+      expectExportPath(
+        { ...exampleDocument, build: { ...exampleDocument.build, outputDirectory } },
+        'build.outputDirectory',
+      ).find((issue) => issue.path === 'build.outputDirectory')?.message
+
+    expect(outputMessage('')).toBe('Output directory is required.')
+    expect(outputMessage('   ')).toBe('Output directory is required.')
+    expect(outputMessage('build/<out>')).toBe('Output directory is not valid.')
+
+    const kept = expectExport({
+      ...exampleDocument,
+      build: { ...exampleDocument.build, outputDirectory: 'build' },
+      copyToTarget: { targetDirectory: 'dist' },
+    })
+    expect(kept.build.outputDirectory).toBe('build')
+    expect(kept.copyToTarget.targetDirectory).toBe('dist')
+    expect(expectExport({
+      ...exampleDocument,
+      build: { ...exampleDocument.build, outputDirectory: 'out' },
+    }).build.outputDirectory).toBe('out')
+
+    const preserved = expectExport({
+      ...exampleDocument,
+      build: { ...exampleDocument.build, outputDirectory: '  build/  ' },
+      copyToTarget: { targetDirectory: 'C:\\releases\\app\\' },
+    })
+    expect(preserved.build.outputDirectory).toBe('  build/  ')
+    expect(preserved.copyToTarget.targetDirectory).toBe('C:\\releases\\app\\')
+  })
+
+  it('uses a separate message for a missing date and an impossible date', () => {
+    const messageFor = (releaseDate: string) =>
+      expectExportPath(
+        { ...exampleDocument, vdd: { ...exampleDocument.vdd, releaseDate } },
+        'vdd.releaseDate',
+      ).find((issue) => issue.path === 'vdd.releaseDate')?.message
+
+    expect(messageFor('')).toBe('Release date is required.')
+    expect(messageFor('   ')).toBe('Release date is required.')
+    expect(messageFor('2024-02-31')).toBe('Release date is not valid.')
+    expect(messageFor('  2024-08-09  ')).toBe('Release date is not valid.')
   })
 
   it.each(['2024-02-31', '2023-02-29', '1900-02-29', '2024-13-01', '08/09/2024'])(
@@ -395,23 +430,19 @@ describe('export validation', () => {
     }).vdd?.releaseDate).toBe('2000-02-29')
   })
 
-  it('rejects only a spaced date and keeps the original URL', () => {
-    const issues = expectExportRejection(padded)
-
-    expect(issues.map((issue) => issue.path)).toEqual(['vdd.releaseDate'])
-    expect(padded.configurationManager.url).toBe('  http://config-manager.example.com  ')
-  })
-
-  it('keeps surrounding spaces on a valid URL', () => {
-    const document = expectExport({
-      ...exampleDocument,
-      configurationManager: {
-        ...exampleDocument.configurationManager,
-        url: '  https://config-manager.example.com  ',
-      },
+  it('keeps surrounding spaces and does not rewrite the input', () => {
+    const exported = expectExport({
+      ...padded,
+      vdd: { ...padded.vdd, releaseDate: '2024-08-09' },
     })
 
-    expect(document.configurationManager.url).toBe('  https://config-manager.example.com  ')
+    expect(exported.configurationManager).toEqual(padded.configurationManager)
+    expect(exported.branchSelection).toEqual(padded.branchSelection)
+    expect(exported.build).toEqual(padded.build)
+    expect(exported.copyToTarget).toEqual(padded.copyToTarget)
+    expect(exported.vdd?.versionNumber).toBe('  1.0.0  ')
+    expect(exported.vdd?.releaseDate).toBe('2024-08-09')
+    expect(padded.configurationManager.url).toBe('  http://config-manager.example.com  ')
   })
 
   it('does not include the password in error messages', () => {
@@ -435,15 +466,15 @@ describe('export validation', () => {
       signedBy: 'qa-team',
       configurationManager: {
         url: 'http://config-manager.example.com',
-        username: '  admin  ',
-        password: '',
+        username: 'admin',
+        password: 'password123',
         timeoutSeconds: 30,
         retry: { attempts: 3, backoffMs: 500 },
       },
-      branchSelection: { defaultBranch: '  main  ' },
+      branchSelection: { defaultBranch: 'main' },
       build: {
         versionNumber: '1.0',
-        command: '  npm run build  ',
+        command: 'npm run build',
         outputDirectory: 'build/',
       },
       copyToTarget: { targetDirectory: 'C:\\releases\\app\\' },
@@ -460,12 +491,12 @@ describe('export validation', () => {
     expect(JSON.stringify(source)).toBe(snapshot)
     expect(exported.schemaVersion).toBe(4)
     expect(exported.signedBy).toBe('qa-team')
-    expect(exported.configurationManager.username).toBe('  admin  ')
-    expect(exported.configurationManager.password).toBe('')
+    expect(exported.configurationManager.username).toBe('admin')
+    expect(exported.configurationManager.password).toBe('password123')
     expect(exported.configurationManager.timeoutSeconds).toBe(30)
     expect(exported.configurationManager.retry).toMatchObject({ attempts: 3 })
     expect(exported.build.versionNumber).toBe('1.0')
-    expect(exported.branchSelection.defaultBranch).toBe('  main  ')
+    expect(exported.branchSelection.defaultBranch).toBe('main')
     expect(exported.copyToTarget.targetDirectory).toBe('C:\\releases\\app\\')
     expect(exported.vdd?.versionNumber).toBe('9.0')
     expect(exported.vdd?.recentFixes).toEqual([])

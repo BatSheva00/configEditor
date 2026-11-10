@@ -8,5 +8,6 @@ export const downloadTextFile = (fileName: string, contents: string) => {
   link.href = url
   link.download = fileName
   link.click()
-  URL.revokeObjectURL(url)
+  // Revoke after the click so the browser can start the download.
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000)
 }

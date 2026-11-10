@@ -1,16 +1,15 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { createDefaultReleaseConfig } from '../model/defaults.ts'
 import {
   applyKnownFields,
   parseConfigurationText,
   serializeConfiguration,
   toFormValues,
-  type ReleaseConfigFormValues,
-} from '../model/document.ts'
+} from '../model/convertConfiguration.ts'
 import type { ReleaseConfigDraft } from '../model/schema.ts'
-import { validateReleaseConfig, validateReleaseConfigForExport, type ValidationIssue } from '../model/validation.ts'
+import type { ValidationIssue } from '../model/validationTypes.ts'
+import { validateReleaseConfig, validateReleaseConfigForExport } from '../model/validation.ts'
 import { downloadTextFile, readTextFile } from '../infrastructure/files/browser-files.ts'
-import { loadDraftSession, saveDraftSession } from '../infrastructure/storage/draft-session.ts'
 import { useConfigurationForm } from './useConfigurationForm.ts'
 
 export const defaultConfigurationFileName = 'release-config.json'
@@ -18,39 +17,24 @@ export const defaultConfigurationFileName = 'release-config.json'
 export type ConfigurationNotice =
   | { kind: 'syntax'; message: string }
   | { kind: 'structure'; issues: ValidationIssue[] }
-  | { kind: 'export'; issues: ValidationIssue[] }
   | { kind: 'downloaded' }
 
-const initialDocument = () => createDefaultReleaseConfig()
-
-const workingDocument = (
-  source: ReleaseConfigDraft,
-  values: ReleaseConfigFormValues,
-  removeVdd: boolean,
-) => applyKnownFields(source, values, { removeVdd })
-
-export const useConfigurationSession = () => {
-  const [restored] = useState(loadDraftSession)
-  const form = useConfigurationForm(restored ? toFormValues(restored.document) : undefined)
-  const [source, setSource] = useState<ReleaseConfigDraft>(() => restored?.document ?? initialDocument())
-  const [cleanText, setCleanText] = useState(() => restored?.cleanText ?? serializeConfiguration(initialDocument()))
-  const [fileName, setFileName] = useState<string | null>(() => restored?.fileName ?? null)
+export const useConfigurationEditor = () => {
+  const form = useConfigurationForm()
+  const [source, setSource] = useState<ReleaseConfigDraft>(createDefaultReleaseConfig)
+  const [cleanText, setCleanText] = useState(() => serializeConfiguration(createDefaultReleaseConfig()))
+  const [fileName, setFileName] = useState<string | null>(null)
   const [removeVdd, setRemoveVdd] = useState(false)
   const [notice, setNotice] = useState<{ value: ConfigurationNotice; text: string } | null>(null)
   const [pendingFile, setPendingFile] = useState<{ name: string; document: ReleaseConfigDraft } | null>(null)
   const values = form.watch()
   const vddRemoved = removeVdd && values.vdd !== undefined
-  const current = workingDocument(source, values, vddRemoved)
+  const current = applyKnownFields(source, values, { removeVdd: vddRemoved })
   const currentText = serializeConfiguration(current)
+  const exportCheck = validateReleaseConfigForExport(current)
+  const canDownload = exportCheck.success
+  const downloadIssues = exportCheck.success ? [] : exportCheck.issues
   const visibleNotice = notice?.text === currentText ? notice.value : null
-
-  useEffect(() => {
-    const validated = validateReleaseConfig(JSON.parse(currentText))
-    if (!validated.success) {
-      return
-    }
-    saveDraftSession({ document: validated.data, cleanText, fileName })
-  }, [currentText, cleanText, fileName])
 
   useEffect(() => {
     if (currentText === cleanText) {
@@ -68,7 +52,7 @@ export const useConfigurationSession = () => {
 
   const openDocument = (name: string, document: ReleaseConfigDraft) => {
     const formValues = toFormValues(document)
-    const text = serializeConfiguration(workingDocument(document, formValues, false))
+    const text = serializeConfiguration(applyKnownFields(document, formValues))
     setSource(document)
     setRemoveVdd(false)
     setFileName(name)
@@ -78,7 +62,7 @@ export const useConfigurationSession = () => {
     setNotice(null)
   }
 
-  const chooseFile = async (file: File) => {
+  const importFile = async (file: File) => {
     const text = await readTextFile(file)
     const parsed = parseConfigurationText(text)
     if (!parsed.success) {
@@ -101,11 +85,14 @@ export const useConfigurationSession = () => {
     openDocument(file.name, validated.data)
   }
 
+  const revealFieldErrors = useCallback(() => {
+    void form.handleSubmit(() => undefined)()
+  }, [form])
+
   const download = () => {
-    const document = workingDocument(source, form.getValues(), vddRemoved)
+    const document = applyKnownFields(source, form.getValues(), { removeVdd: vddRemoved })
     const validated = validateReleaseConfigForExport(document)
     if (!validated.success) {
-      showNotice({ kind: 'export', issues: validated.issues })
       return
     }
 
@@ -115,20 +102,27 @@ export const useConfigurationSession = () => {
     showNotice({ kind: 'downloaded' })
   }
 
+  const includeVdd = () => {
+    setRemoveVdd(false)
+    form.setValue('vdd', { versionNumber: '', releaseDate: '', recentFixes: [] }, { shouldDirty: true })
+  }
+
   const removeVddBlock = () => {
-    setSource((currentSource) => workingDocument(currentSource, form.getValues(), true))
+    setSource((currentSource) => applyKnownFields(currentSource, form.getValues(), { removeVdd: true }))
+    form.unregister('vdd')
     setRemoveVdd(true)
   }
 
   return {
     control: form.control,
     setValue: form.setValue,
-    unregister: form.unregister,
     currentText,
+    canDownload,
+    downloadIssues,
     fileName: fileName ?? defaultConfigurationFileName,
     notice: visibleNotice,
     pendingFile,
-    chooseFile,
+    importFile,
     confirmOpen: () => {
       if (pendingFile) {
         openDocument(pendingFile.name, pendingFile.document)
@@ -136,7 +130,8 @@ export const useConfigurationSession = () => {
     },
     cancelOpen: () => setPendingFile(null),
     download,
-    includeVdd: () => setRemoveVdd(false),
+    revealFieldErrors,
+    includeVdd,
     removeVddBlock,
   }
 }

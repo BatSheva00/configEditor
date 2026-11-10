@@ -4,7 +4,7 @@ import {
   parseConfigurationText,
   serializeConfiguration,
   toFormValues,
-} from '../model/document.ts'
+} from '../model/convertConfiguration.ts'
 import type { ReleaseConfigDraft } from '../model/schema.ts'
 import { validateReleaseConfig } from '../model/validation.ts'
 
@@ -136,6 +136,16 @@ describe('configuration documents', () => {
     expect(updated).not.toBe(document)
     expect(JSON.stringify(document)).toBe(snapshot)
     expect(updated).toEqual(document)
+  })
+
+  it('leaves out a blank fix and keeps a written one as typed', () => {
+    const values = toFormValues(document)
+    if (values.vdd) {
+      values.vdd.recentFixes = ['  Fixed login  ', '   ', '']
+    }
+    const updated = applyKnownFields(document, values)
+
+    expect(updated.vdd?.recentFixes).toEqual(['  Fixed login  '])
   })
 
   it('copies recentFixes instead of sharing the form array', () => {

@@ -1,35 +1,13 @@
+import type { ReleaseConfigFieldValues } from './validators.ts'
 import type { ReleaseConfigDraft } from './schema.ts'
 
-type ConfigurationManagerValues = Pick<
-  ReleaseConfigDraft['configurationManager'],
-  'url' | 'username' | 'password'>
-
-type BranchSelectionValues = Pick<ReleaseConfigDraft['branchSelection'], 'defaultBranch'>
-
-type BuildValues = Pick<
-  ReleaseConfigDraft['build'],
-  'versionNumber' | 'command' | 'outputDirectory'>
-
-type CopyToTargetValues = Pick<ReleaseConfigDraft['copyToTarget'], 'targetDirectory'>
-
-type VddValues = Pick<
-  NonNullable<ReleaseConfigDraft['vdd']>,
-  'versionNumber' | 'releaseDate' | 'recentFixes'>
-  
-
-export type ReleaseConfigFormValues = {
-  configurationManager: ConfigurationManagerValues
-  branchSelection: BranchSelectionValues
-  build: BuildValues
-  copyToTarget: CopyToTargetValues
-  vdd?: VddValues
-}
+export type ReleaseConfigFormValues = ReleaseConfigFieldValues
 
 export type ConfigurationTextResult =
   | { success: true; data: unknown }
   | { success: false; message: string }
 
-/** JSON syntax only. Field checks stay in `validation.ts`. */
+/** JSON syntax only. Accepted field values stay in `validators.ts`. */
 export const parseConfigurationText = (text: string): ConfigurationTextResult => {
   try {
     return { success: true, data: JSON.parse(text) }
@@ -87,7 +65,7 @@ export const applyKnownFields = (
     next.vdd = {
       ...next.vdd,
       ...values.vdd,
-      recentFixes: [...values.vdd.recentFixes],
+      recentFixes: values.vdd.recentFixes.filter((fix) => fix.trim().length > 0),
     }
   }
 

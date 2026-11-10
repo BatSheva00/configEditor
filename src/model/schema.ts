@@ -2,39 +2,39 @@ import { z } from 'zod'
 
 const jsonValueSchema = z.json()
 
-export type JsonValue = z.infer<typeof jsonValueSchema>
-
 /** Known fields keep the types in `shape`. Any other JSON key is retained. */
 const jsonObject = <Shape extends z.core.$ZodLooseShape>(shape: Shape) =>
   z.object(shape).catchall(jsonValueSchema)
 
+const text = z.string()
+
 export const configurationManagerSchema = jsonObject({
-  url: z.string(),
-  username: z.string(),
-  password: z.string(),
+  url: text,
+  username: text,
+  password: text,
 })
 
 export const branchSelectionSchema = jsonObject({
-  defaultBranch: z.string(),
+  defaultBranch: text,
 })
 
 export const buildSchema = jsonObject({
-  versionNumber: z.string(),
-  command: z.string(),
-  outputDirectory: z.string(),
+  versionNumber: text,
+  command: text,
+  outputDirectory: text,
 })
 
 export const copyToTargetSchema = jsonObject({
-  targetDirectory: z.string(),
+  targetDirectory: text,
 })
 
 export const vddSchema = jsonObject({
-  versionNumber: z.string(),
-  releaseDate: z.string(),
-  recentFixes: z.array(z.string(), 'Recent fixes must be a list of text.'),
+  versionNumber: text,
+  releaseDate: text,
+  recentFixes: z.array(text, 'Recent fixes must be a list of text.'),
 })
 
-/** A required field is a present key. An empty string is a valid value. */
+/** A required field is a present key. An empty string is a valid value. The string is kept as read. */
 export const releaseConfigSchema = jsonObject({
   configurationManager: configurationManagerSchema,
   branchSelection: branchSelectionSchema,
@@ -43,10 +43,5 @@ export const releaseConfigSchema = jsonObject({
   vdd: vddSchema.optional(),
 }).brand<'ValidatedReleaseConfig'>()
 
-export type ConfigurationManagerSettings = z.infer<typeof configurationManagerSchema>
-export type BranchSelectionSettings = z.infer<typeof branchSelectionSchema>
-export type BuildSettings = z.infer<typeof buildSchema>
-export type CopyToTargetSettings = z.infer<typeof copyToTargetSchema>
-export type VddDocument = z.infer<typeof vddSchema>
 export type ReleaseConfigDraft = z.input<typeof releaseConfigSchema>
 export type ReleaseConfig = z.output<typeof releaseConfigSchema>
