@@ -25,15 +25,13 @@ export const useConfigurationEditor = () => {
   const [source, setSource] = useState<ReleaseConfigDraft>(createDefaultReleaseConfig)
   const [cleanText, setCleanText] = useState(() => serializeConfiguration(createDefaultReleaseConfig()))
   const [fileName, setFileName] = useState<string | null>(null)
-  const [removeVdd, setRemoveVdd] = useState(false)
   const [notice, setNotice] = useState<{ value: ConfigurationNotice; text: string } | null>(null)
   const [pendingFile, setPendingFile] = useState<{ name: string; document: ReleaseConfigDraft } | null>(null)
   const [isImporting, setIsImporting] = useState(false)
   const importingRef = useRef(false)
   const latestText = useRef({ currentText: '', cleanText: '' })
   const values = form.watch()
-  const vddRemoved = removeVdd && values.vdd !== undefined
-  const current = applyKnownFields(source, values, { removeVdd: vddRemoved })
+  const current = applyKnownFields(source, values)
   const currentText = serializeConfiguration(current)
   const exportCheck = validateReleaseConfigForExport(current)
   const canDownload = exportCheck.success
@@ -63,7 +61,6 @@ export const useConfigurationEditor = () => {
     const formValues = toFormValues(document)
     const text = serializeConfiguration(applyKnownFields(document, formValues))
     setSource(document)
-    setRemoveVdd(false)
     setFileName(name)
     setCleanText(text)
     form.reset(formValues)
@@ -118,7 +115,7 @@ export const useConfigurationEditor = () => {
   }, [form])
 
   const download = () => {
-    const document = applyKnownFields(source, form.getValues(), { removeVdd: vddRemoved })
+    const document = applyKnownFields(source, form.getValues())
     const validated = validateReleaseConfigForExport(document)
     if (!validated.success) {
       return
@@ -131,14 +128,12 @@ export const useConfigurationEditor = () => {
   }
 
   const includeVdd = () => {
-    setRemoveVdd(false)
     form.setValue('vdd', { versionNumber: '', releaseDate: '', recentFixes: [] }, { shouldDirty: true })
   }
 
   const removeVddBlock = () => {
     setSource((currentSource) => applyKnownFields(currentSource, form.getValues(), { removeVdd: true }))
     form.unregister('vdd')
-    setRemoveVdd(true)
   }
 
   return {
