@@ -30,7 +30,11 @@ const directoryPath = (requiredMessage: string, invalidMessage: string) =>
       payload.issues.push({ code: 'custom', input: value, message: requiredMessage })
       return
     }
-    if (/[<>"|?*\u0000-\u001F]/.test(value)) {
+    const hasForbiddenPathCharacter = [...value].some((character) => {
+      const code = character.codePointAt(0) ?? 0
+      return code <= 0x1f || '<>"|?*'.includes(character)
+    })
+    if (hasForbiddenPathCharacter) {
       payload.issues.push({ code: 'custom', input: value, message: invalidMessage })
     }
   })

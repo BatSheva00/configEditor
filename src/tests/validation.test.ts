@@ -374,6 +374,7 @@ describe('export validation', () => {
     expect(outputMessage('')).toBe('Output directory is required.')
     expect(outputMessage('   ')).toBe('Output directory is required.')
     expect(outputMessage('build/<out>')).toBe('Output directory is not valid.')
+    expect(outputMessage('a\u0000b')).toBe('Output directory is not valid.')
 
     const kept = expectExport({
       ...exampleDocument,

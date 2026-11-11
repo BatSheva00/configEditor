@@ -44,15 +44,16 @@ export function ConfigurationEditorPage() {
   const [previewVisible, setPreviewVisible] = useState(false)
   const [previewConfirm, setPreviewConfirm] = useState(false)
   const editor = useConfigurationEditor()
+  const { revealFieldErrors } = editor
   const lastStep = configurationSteps.length - 1
   const ActiveStep = configurationSteps[activeStep].Step
   const showBlockedList = !editor.canDownload && activeStep === lastStep
 
   useEffect(() => {
     if (activeStep === lastStep) {
-      editor.revealFieldErrors()
+      revealFieldErrors()
     }
-  }, [activeStep, lastStep, editor.revealFieldErrors])
+  }, [activeStep, lastStep, revealFieldErrors])
 
   return (
     <Stack spacing={2.5} sx={{ mt: 3 }}>
