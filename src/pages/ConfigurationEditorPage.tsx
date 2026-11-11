@@ -35,7 +35,8 @@ const noticeTitle = (notice: Exclude<ConfigurationNotice, { kind: 'downloaded' }
 export function ConfigurationEditorPage() {
   const fileInput = useRef<HTMLInputElement>(null)
   const [activeStep, setActiveStep] = useState(0)
-  const [previewVisible, setPreviewVisible] = useState(true)
+  const [previewVisible, setPreviewVisible] = useState(false)
+  const [previewConfirm, setPreviewConfirm] = useState(false)
   const editor = useConfigurationEditor()
   const lastStep = configurationSteps.length - 1
   const ActiveStep = configurationSteps[activeStep].Step
@@ -119,7 +120,7 @@ export function ConfigurationEditorPage() {
                   {configurationSteps[activeStep].label}
                 </Typography>
                 {!previewVisible && (
-                  <Button size="small" onClick={() => setPreviewVisible(true)}>
+                  <Button size="small" onClick={() => setPreviewConfirm(true)}>
                     Show preview
                   </Button>
                 )}
@@ -145,6 +146,17 @@ export function ConfigurationEditorPage() {
         </Stack>
         {previewVisible && <ConfigurationPreview text={editor.currentText} onHide={() => setPreviewVisible(false)} />}
       </Box>
+      <ConfirmDialog
+        open={previewConfirm}
+        title="Show the preview?"
+        message="The preview shows passwords in plain text."
+        confirmLabel="Show preview"
+        onConfirm={() => {
+          setPreviewConfirm(false)
+          setPreviewVisible(true)
+        }}
+        onCancel={() => setPreviewConfirm(false)}
+      />
       <ConfirmDialog
         open={editor.pendingFile !== null}
         title="Open another configuration?"

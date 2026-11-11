@@ -2,7 +2,7 @@
 
 import { ThemeProvider } from '@mui/material/styles'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor, waitForElementToBeRemoved } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, waitForElementToBeRemoved, within } from '@testing-library/react'
 import { appTheme } from '../theme.ts'
 import { ConfigurationEditorPage } from '../pages/ConfigurationEditorPage.tsx'
 
@@ -21,6 +21,12 @@ const helperOf = (input: HTMLElement) => {
   return helper
 }
 
+const showPreview = async () => {
+  fireEvent.click(screen.getByRole('button', { name: 'Show preview' }))
+  fireEvent.click(within(screen.getByRole('dialog', { name: 'Show the preview?' })).getByRole('button', { name: 'Show preview' }))
+  await waitForElementToBeRemoved(() => screen.queryByRole('dialog', { name: 'Show the preview?' }))
+}
+
 const chooseFile = (contents: string, name = 'customer.json') => {
   const input = document.querySelector('input[type="file"]')
   if (!(input instanceof HTMLInputElement)) {
@@ -34,7 +40,7 @@ afterEach(() => {
 })
 
 describe('ConfigurationEditorPage', () => {
-  it('keeps an entered value after moving to the next step and back', () => {
+  it('keeps an entered value after moving to the next step and back', async () => {
     renderEditor()
 
     fireEvent.change(screen.getByLabelText('Configuration manager URL'), {
@@ -50,6 +56,7 @@ describe('ConfigurationEditorPage', () => {
       'value',
       'http://config-manager.example.com',
     )
+    await showPreview()
     expect(screen.getByRole('region', { name: 'Current values' }).textContent).toContain(
       '"url": "http://config-manager.example.com"',
     )
@@ -106,20 +113,32 @@ describe('ConfigurationEditorPage', () => {
     expect(releaseDate).toHaveProperty('value', '')
   })
 
-  it('hides and shows the JSON preview', () => {
+  it('hides and shows the JSON preview', async () => {
     renderEditor()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Hide preview' }))
     expect(screen.queryByRole('region', { name: 'Current values' })).toBeNull()
 
     fireEvent.click(screen.getByRole('button', { name: 'Show preview' }))
-    expect(screen.getByRole('region', { name: 'Current values' })).toBeTruthy()
+    const dialog = screen.getByRole('dialog', { name: 'Show the preview?' })
+    expect(dialog.textContent).toContain('The preview shows passwords in plain text.')
+    expect(screen.queryByRole('region', { name: 'Current values' })).toBeNull()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+    await waitForElementToBeRemoved(() => screen.queryByRole('dialog', { name: 'Show the preview?' }))
+    expect(screen.queryByRole('region', { name: 'Current values' })).toBeNull()
+
+    await showPreview()
+    const preview = screen.getByRole('region', { name: 'Current values' })
+    expect(preview.querySelector('pre')?.textContent).toContain('"url": ""')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Hide preview' }))
+    expect(screen.queryByRole('region', { name: 'Current values' })).toBeNull()
   })
 
-  it('adds an empty version description without copying the build version', () => {
+  it('adds an empty version description without copying the build version', async () => {
     renderEditor()
 
     expect(screen.getByText('No version description in this configuration.')).toBeTruthy()
+    await showPreview()
     expect(screen.getByRole('region', { name: 'Current values' }).textContent).not.toContain('"vdd"')
 
     fireEvent.click(screen.getByRole('switch', { name: 'Include a version description' }))
@@ -133,7 +152,7 @@ describe('ConfigurationEditorPage', () => {
     expect(preview).toContain('"recentFixes": []')
   })
 
-  it('stores the version description text as typed and keeps a chosen date', () => {
+  it('stores the version description text as typed and keeps a chosen date', async () => {
     renderEditor()
     fireEvent.click(screen.getByRole('switch', { name: 'Include a version description' }))
 
@@ -149,6 +168,7 @@ describe('ConfigurationEditorPage', () => {
 
     expect(screen.getByLabelText('Description version')).toHaveProperty('value', '  1.0  ')
     expect(screen.getByLabelText('Fix 1')).toHaveProperty('value', '   ')
+    await showPreview()
     const preview = screen.getByRole('region', { name: 'Current values' }).textContent ?? ''
     expect(preview).toContain('"versionNumber": "  1.0  "')
     expect(preview).toContain('"releaseDate": "2024-08-09"')
@@ -172,6 +192,7 @@ describe('ConfigurationEditorPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Remove' }))
     await waitForElementToBeRemoved(() => screen.queryByRole('dialog'))
     expect(screen.getByText('No version description in this configuration.')).toBeTruthy()
+    await showPreview()
     expect(screen.getByRole('region', { name: 'Current values' }).textContent).not.toContain('"vdd"')
 
     fireEvent.click(include)
@@ -198,24 +219,26 @@ describe('ConfigurationEditorPage', () => {
     expect(screen.getByRole('dialog')).toBeTruthy()
   })
 
-  it('keeps the version description while changing steps and hiding the preview', () => {
+  it('keeps the version description while changing steps and hiding the preview', async () => {
     renderEditor()
     fireEvent.click(screen.getByRole('switch', { name: 'Include a version description' }))
     fireEvent.change(screen.getByLabelText('Release date'), { target: { value: '2024-08-09' } })
     fireEvent.click(screen.getByRole('button', { name: 'Next' }))
+    await showPreview()
     fireEvent.click(screen.getByRole('button', { name: 'Hide preview' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Show preview' }))
+    await showPreview()
 
     expect(screen.getByLabelText('Branch name')).toBeTruthy()
     expect(screen.getByLabelText('Release date')).toHaveProperty('value', '2024-08-09')
     expect(screen.getByRole('region', { name: 'Current values' }).textContent).toContain('"releaseDate": "2024-08-09"')
   })
 
-  it('keeps spaces in the current editor and starts fresh when opened again', () => {
+  it('keeps spaces in the current editor and starts fresh when opened again', async () => {
     const view = renderEditor()
     fireEvent.change(screen.getByLabelText('Configuration manager URL'), { target: { value: '   ' } })
 
     expect(screen.getByLabelText('Configuration manager URL')).toHaveProperty('value', '   ')
+    await showPreview()
     expect(screen.getByRole('region', { name: 'Current values' }).textContent).toContain('"url": "   "')
     expect(sessionStorage.getItem('config-editor-draft')).toBeNull()
 
@@ -223,6 +246,7 @@ describe('ConfigurationEditorPage', () => {
     renderEditor()
 
     expect(screen.getByLabelText('Configuration manager URL')).toHaveProperty('value', '')
+    await showPreview()
     expect(screen.getByRole('region', { name: 'Current values' }).textContent).toContain('"url": ""')
   })
 
@@ -264,13 +288,14 @@ describe('ConfigurationEditorPage', () => {
     expect(blocked.textContent).toContain('Copy to Target Directory')
   })
 
-  it('downloads a complete configuration and refuses an incomplete one', () => {
+  it('downloads a complete configuration and refuses an incomplete one', async () => {
     const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined)
     renderEditor()
 
     expect(screen.getByRole('button', { name: 'Download configuration' })).toHaveProperty('disabled', true)
     fireEvent.click(screen.getByRole('button', { name: 'Download configuration' }))
     expect(click).not.toHaveBeenCalled()
+    await showPreview()
     expect(screen.getByRole('region', { name: 'Current values' }).textContent).toContain('"url": ""')
 
     fireEvent.change(screen.getByLabelText('Configuration manager URL'), {
@@ -308,6 +333,7 @@ describe('ConfigurationEditorPage', () => {
     }))
 
     expect(await screen.findByDisplayValue('http://kept.example.com')).toBeTruthy()
+    await showPreview()
     expect(screen.getByRole('region', { name: 'Current values' }).textContent).toContain('"schemaVersion": 4')
     fireEvent.change(screen.getByLabelText('Configuration manager URL'), {
       target: { value: 'http://edited.example.com' },
@@ -343,6 +369,37 @@ describe('ConfigurationEditorPage', () => {
     const edited = new Event('beforeunload', { cancelable: true })
     window.dispatchEvent(edited)
     expect(edited.defaultPrevented).toBe(true)
+  })
+
+  it('shows the exported JSON in the preview, including the password', async () => {
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined)
+    renderEditor()
+
+    fireEvent.change(screen.getByLabelText('Configuration manager URL'), {
+      target: { value: 'http://config-manager.example.com' },
+    })
+    fireEvent.change(screen.getByLabelText('Username'), { target: { value: 'admin' } })
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'hunter2-secret' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }))
+    fireEvent.change(screen.getByLabelText('Target directory'), { target: { value: '/var/www/html/' } })
+    await showPreview()
+    const json = screen.getByRole('region', { name: 'Current values' }).querySelector('pre')?.textContent ?? ''
+    const downloaded: string[] = []
+    const RealBlob = Blob
+    const blob = vi.spyOn(globalThis, 'Blob').mockImplementation(function (parts?: BlobPart[], options?: BlobPropertyBag) {
+      downloaded.push(String(parts?.[0] ?? ''))
+      return new RealBlob(parts, options)
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Download configuration' }))
+
+    expect(json).toBe(downloaded[0])
+    expect(json).toContain('"password": "hunter2-secret"')
+    expect(json).not.toMatch(/\*{3,}|•+/)
+    blob.mockRestore()
+    click.mockRestore()
   })
 
   it('shows the password when the eye is pressed', () => {
