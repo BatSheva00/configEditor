@@ -2,7 +2,7 @@
 
 import { ThemeProvider } from '@mui/material/styles'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor, waitForElementToBeRemoved, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, waitForElementToBeRemoved, within } from '@testing-library/react'
 import { appTheme } from '../theme.ts'
 import { ConfigurationEditorPage } from '../pages/ConfigurationEditorPage.tsx'
 
@@ -27,12 +27,44 @@ const showPreview = async () => {
   await waitForElementToBeRemoved(() => screen.queryByRole('dialog', { name: 'Show the preview?' }))
 }
 
-const chooseFile = (contents: string, name = 'customer.json') => {
+const configurationDocument = (url: string) =>
+  JSON.stringify({
+    configurationManager: { url, username: 'admin', password: 'password123' },
+    branchSelection: { defaultBranch: 'main' },
+    build: { versionNumber: '1.0.0', command: 'npm run build', outputDirectory: 'build/' },
+    copyToTarget: { targetDirectory: '/var/www/html/' },
+  })
+
+const fileInput = () => {
   const input = document.querySelector('input[type="file"]')
   if (!(input instanceof HTMLInputElement)) {
     throw new Error('Configuration file input was not found.')
   }
-  fireEvent.change(input, { target: { files: [new File([contents], name, { type: 'application/json' })] } })
+  return input
+}
+
+const chooseFile = (contents: string, name = 'customer.json') => {
+  fireEvent.change(fileInput(), { target: { files: [new File([contents], name, { type: 'application/json' })] } })
+}
+
+const chooseThisFile = (file: File) => {
+  fireEvent.change(fileInput(), { target: { files: [file] } })
+}
+
+const deferredFile = (contents: string, name: string) => {
+  let resolveRead: (value: string) => void = () => undefined
+  let rejectRead: (reason?: unknown) => void = () => undefined
+  const file = new File([contents], name, { type: 'application/json' })
+  const result = new Promise<string>((resolve, reject) => {
+    resolveRead = resolve
+    rejectRead = reject
+  })
+  vi.spyOn(file, 'text').mockReturnValue(result)
+  return {
+    file,
+    finish: () => resolveRead(contents),
+    fail: () => rejectRead(new Error('disk')),
+  }
 }
 
 afterEach(() => {
@@ -413,5 +445,94 @@ describe('ConfigurationEditorPage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Hide password' }))
     expect(password).toHaveProperty('type', 'password')
+  })
+
+  it('keeps an edit made while a file is loading and asks before replacing it', async () => {
+    renderEditor()
+    const pending = deferredFile(configurationDocument('http://from-file.example.com'), 'incoming.json')
+    chooseThisFile(pending.file)
+
+    fireEvent.change(screen.getByLabelText('Configuration manager URL'), {
+      target: { value: 'http://edited-during-read.example.com' },
+    })
+    await act(async () => {
+      pending.finish()
+    })
+
+    expect(await screen.findByRole('dialog', { name: 'Open another configuration?' })).toBeTruthy()
+    expect(screen.getByRole('textbox', { name: 'Configuration manager URL', hidden: true })).toHaveProperty(
+      'value',
+      'http://edited-during-read.example.com',
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    await waitForElementToBeRemoved(() => screen.queryByRole('dialog', { name: 'Open another configuration?' }))
+    expect(screen.getByLabelText('Configuration manager URL')).toHaveProperty('value', 'http://edited-during-read.example.com')
+    expect(screen.queryByText('incoming.json')).toBeNull()
+  })
+
+  it('ignores another file chosen while a file is still loading', async () => {
+    renderEditor()
+    const pending = deferredFile(configurationDocument('http://first.example.com'), 'first.json')
+    chooseThisFile(pending.file)
+    expect(screen.getByRole('button', { name: 'Open configuration' })).toHaveProperty('disabled', true)
+
+    chooseFile(configurationDocument('http://second.example.com'), 'second.json')
+    await act(async () => {
+      pending.finish()
+    })
+
+    expect(await screen.findByDisplayValue('http://first.example.com')).toBeTruthy()
+    expect(screen.queryByDisplayValue('http://second.example.com')).toBeNull()
+    expect(screen.getByText('first.json')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Open configuration' })).toHaveProperty('disabled', false)
+  })
+
+  it('shows a syntax error when a file finishes loading after an edit', async () => {
+    renderEditor()
+    const pending = deferredFile('{"password":', 'broken.json')
+    chooseThisFile(pending.file)
+    fireEvent.change(screen.getByLabelText('Configuration manager URL'), {
+      target: { value: 'http://edited-during-read.example.com' },
+    })
+    await act(async () => {
+      pending.finish()
+    })
+
+    expect(await screen.findByText('The file is not valid JSON.')).toBeTruthy()
+    expect(screen.getByLabelText('Configuration manager URL')).toHaveProperty('value', 'http://edited-during-read.example.com')
+    expect(screen.getByRole('button', { name: 'Open configuration' })).toHaveProperty('disabled', false)
+  })
+
+  it('keeps the pending file when another file is chosen while confirmation is open', async () => {
+    renderEditor()
+    fireEvent.change(screen.getByLabelText('Configuration manager URL'), {
+      target: { value: 'http://edited.example.com' },
+    })
+    chooseFile(configurationDocument('http://first.example.com'), 'first.json')
+    expect(await screen.findByRole('dialog', { name: 'Open another configuration?' })).toBeTruthy()
+
+    chooseFile(configurationDocument('http://second.example.com'), 'second.json')
+    expect(screen.getByRole('dialog', { name: 'Open another configuration?' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Open file' }))
+
+    expect(await screen.findByDisplayValue('http://first.example.com')).toBeTruthy()
+    expect(screen.queryByDisplayValue('http://second.example.com')).toBeNull()
+    expect(screen.getByText('first.json')).toBeTruthy()
+    expect(screen.queryByText('second.json')).toBeNull()
+  })
+
+  it('reports a failed file read and clears the loading state', async () => {
+    renderEditor()
+    const pending = deferredFile('{', 'unreadable.json')
+    chooseThisFile(pending.file)
+    expect(screen.getByRole('button', { name: 'Open configuration' })).toHaveProperty('disabled', true)
+
+    await act(async () => {
+      pending.fail()
+    })
+
+    expect(await screen.findByText('The file could not be read.')).toBeTruthy()
+    expect(screen.getByText('Choose the file again.')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Open configuration' })).toHaveProperty('disabled', false)
   })
 })

@@ -27,10 +27,16 @@ const configurationSteps = [
   { label: stepLabels.copyToTarget, Step: CopyToTargetStep },
 ] as const
 
-const noticeTitle = (notice: Exclude<ConfigurationNotice, { kind: 'downloaded' }>) =>
-  notice.kind === 'syntax'
-    ? 'The file is not valid JSON.'
-    : 'The file does not match the configuration structure.'
+const noticeTitle = (notice: Exclude<ConfigurationNotice, { kind: 'downloaded' }>) => {
+  switch (notice.kind) {
+    case 'syntax':
+      return 'The file is not valid JSON.'
+    case 'read':
+      return 'The file could not be read.'
+    case 'structure':
+      return 'The file does not match the configuration structure.'
+  }
+}
 
 export function ConfigurationEditorPage() {
   const fileInput = useRef<HTMLInputElement>(null)
@@ -52,7 +58,7 @@ export function ConfigurationEditorPage() {
     <Stack spacing={2.5} sx={{ mt: 3 }}>
       <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
         <Stack direction="row" spacing={1}>
-          <Button variant="outlined" onClick={() => fileInput.current?.click()}>
+          <Button variant="outlined" disabled={editor.isImporting} onClick={() => fileInput.current?.click()}>
             Open configuration
           </Button>
           <Button variant="contained" onClick={editor.download} disabled={!editor.canDownload}>
@@ -84,9 +90,7 @@ export function ConfigurationEditorPage() {
       {editor.notice && editor.notice.kind !== 'downloaded' && (
         <Alert severity="error">
           <AlertTitle>{noticeTitle(editor.notice)}</AlertTitle>
-          {editor.notice.kind === 'syntax' ? (
-            editor.notice.message
-          ) : (
+          {editor.notice.kind === 'structure' ? (
             <Box component="ul" sx={{ m: 0, pl: 2 }}>
               {editor.notice.issues.map((issue) => (
                 <li key={`${issue.path}:${issue.message}`}>
@@ -94,6 +98,8 @@ export function ConfigurationEditorPage() {
                 </li>
               ))}
             </Box>
+          ) : (
+            editor.notice.message
           )}
         </Alert>
       )}
